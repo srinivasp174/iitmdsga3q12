@@ -6,7 +6,6 @@ import json
 
 app = FastAPI()
 
-# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,109 +19,89 @@ def execute(q: str = ""):
     try:
         q_lower = q.lower()
 
-        # ---------------------------------------
+        # -----------------------------
         # 1) Ticket Status
-        # ---------------------------------------
+        # -----------------------------
         ticket_match = re.search(r"ticket\s+(\d+)", q_lower)
-        if ticket_match and "status" in q_lower:
-            ticket_id = int(ticket_match.group(1))
+        if ticket_match:
             return {
                 "name": "get_ticket_status",
                 "arguments": json.dumps({
-                    "ticket_id": ticket_id
+                    "ticket_id": int(ticket_match.group(1))
                 })
             }
 
-        # ---------------------------------------
-        # 2) Schedule Meeting (Flexible)
-        # Supports:
-        # - schedule meeting on YYYY-MM-DD at HH:MM in Room
-        # - set meeting for YYYY-MM-DD, HH:MM at Room
-        # ---------------------------------------
-        meeting_match = re.search(
-            r"(schedule|set).*?(\d{4}-\d{2}-\d{2})[, ]+\s*(\d{2}:\d{2}).*?(?:in|at)\s+(.+)",
-            q,
-            re.IGNORECASE
-        )
+        # -----------------------------
+        # 2) Schedule Meeting
+        # Detect date + time + room
+        # -----------------------------
+        date_match = re.search(r"\d{4}-\d{2}-\d{2}", q)
+        time_match = re.search(r"\d{2}:\d{2}", q)
 
-        if meeting_match:
-            date = meeting_match.group(2)
-            time = meeting_match.group(3)
-            meeting_room = meeting_match.group(4).strip().rstrip(".")
+        # capture last words as meeting room after "at" or "in"
+        room_match = re.search(r"(?:at|in)\s+(.+)", q, re.IGNORECASE)
 
+        if date_match and time_match and room_match:
             return {
                 "name": "schedule_meeting",
                 "arguments": json.dumps({
-                    "date": date,
-                    "time": time,
-                    "meeting_room": meeting_room
+                    "date": date_match.group(0),
+                    "time": time_match.group(0),
+                    "meeting_room": room_match.group(1).strip().rstrip(".")
                 })
             }
 
-        # ---------------------------------------
+        # -----------------------------
         # 3) Expense Balance
-        # ---------------------------------------
-        expense_match = re.search(r"employee\s+(\d+)", q_lower)
-        if expense_match and "expense" in q_lower:
-            employee_id = int(expense_match.group(1))
-            return {
-                "name": "get_expense_balance",
-                "arguments": json.dumps({
-                    "employee_id": employee_id
-                })
-            }
+        # -----------------------------
+        if "expense" in q_lower:
+            emp_match = re.search(r"employee\s+(\d+)", q_lower)
+            if emp_match:
+                return {
+                    "name": "get_expense_balance",
+                    "arguments": json.dumps({
+                        "employee_id": int(emp_match.group(1))
+                    })
+                }
 
-        # ---------------------------------------
+        # -----------------------------
         # 4) Performance Bonus
-        # ---------------------------------------
-        bonus_match = re.search(
-            r"employee\s+(\d+).*?(\d{4})",
-            q_lower
-        )
-        if bonus_match and "bonus" in q_lower:
-            employee_id = int(bonus_match.group(1))
-            current_year = int(bonus_match.group(2))
+        # -----------------------------
+        if "bonus" in q_lower:
+            emp_match = re.search(r"employee\s+(\d+)", q_lower)
+            year_match = re.search(r"\b(20\d{2})\b", q_lower)
 
-            return {
-                "name": "calculate_performance_bonus",
-                "arguments": json.dumps({
-                    "employee_id": employee_id,
-                    "current_year": current_year
-                })
-            }
+            if emp_match and year_match:
+                return {
+                    "name": "calculate_performance_bonus",
+                    "arguments": json.dumps({
+                        "employee_id": int(emp_match.group(1)),
+                        "current_year": int(year_match.group(1))
+                    })
+                }
 
-        # ---------------------------------------
+        # -----------------------------
         # 5) Office Issue
-        # ---------------------------------------
+        # -----------------------------
         issue_match = re.search(r"issue\s+(\d+)", q_lower)
-        dept_match = re.search(
-            r"(?:for|to)\s+(?:the\s+)?(.+?)\s+department",
-            q,
-            re.IGNORECASE
-        )
+        dept_match = re.search(r"(?:for|to)\s+(?:the\s+)?(.+?)\s+department", q, re.IGNORECASE)
 
         if issue_match and dept_match:
-            issue_code = int(issue_match.group(1))
-            department = dept_match.group(1).strip()
-
             return {
                 "name": "report_office_issue",
                 "arguments": json.dumps({
-                    "issue_code": issue_code,
-                    "department": department
+                    "issue_code": int(issue_match.group(1)),
+                    "department": dept_match.group(1).strip()
                 })
             }
 
-        # ---------------------------------------
-        # Default fallback (always valid JSON)
-        # ---------------------------------------
+        # Always return valid JSON
         return {
             "name": "unknown",
             "arguments": json.dumps({})
         }
 
     except Exception:
-        # Never return HTML errors
         return JSONResponse(
             content={
                 "name": "error",
